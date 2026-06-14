@@ -5,6 +5,8 @@
  * `testMode` (OPENMEOW_TEST_MODE=1) makes login PINs deterministic ("000000")
  * and routes email to the console so end-to-end tests can authenticate.
  */
+// Load `.env` (if present) into process.env before any config is read below.
+import './load-env';
 import path from 'node:path';
 
 export interface Config {

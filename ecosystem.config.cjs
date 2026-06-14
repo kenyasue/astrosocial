@@ -6,6 +6,14 @@
 // SQLite is a single-writer embedded database, run exactly ONE instance in
 // `fork` mode — do NOT use PM2 `cluster` mode / multiple instances, as several
 // processes writing the same database file would contend for the write lock.
+
+// Pin the Node.js runtime used to run the app. Point this at the Node 21 binary
+// on this machine. With nvm, find the path with:  nvm which 21
+// Override at start time without editing this file:
+//   PM2_NODE_BIN="$(nvm which 21)" pm2 start ecosystem.config.cjs
+// If Node 21 is already the default `node` on PATH, the 'node' fallback is fine.
+const NODE_BIN = process.env.PM2_NODE_BIN || 'node';
+
 module.exports = {
   apps: [
     {
@@ -19,7 +27,8 @@ module.exports = {
       // dependency — it is listed under "dependencies" in package.json.)
       script: './node_modules/tsx/dist/cli.mjs',
       args: 'src/server.ts',
-      interpreter: 'node',
+      // Pinned Node.js runtime (Node 21). See NODE_BIN above.
+      interpreter: NODE_BIN,
 
       instances: 1,
       exec_mode: 'fork',
@@ -40,7 +49,12 @@ module.exports = {
 
       env: {
         NODE_ENV: 'production',
-        PORT: 3000,
+        // PORT is intentionally NOT set here so it can be controlled from `.env`
+        // (e.g. PORT=8020). A value set here would take precedence over `.env`
+        // and shadow it. To pin the port via PM2 instead, uncomment the next line
+        // and recreate the process (`pm2 delete` + `pm2 start`; a plain restart
+        // keeps the old env).
+        // PORT: 8020,
       },
     },
   ],

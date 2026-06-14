@@ -83,9 +83,11 @@ cp .env.example .env
 npx playwright install chromium
 ```
 
-On startup the app creates the `data/` and `uploads/` directories and applies
-database migrations automatically. The SQLite database lives at
-`data/openmeow.db` by default (override with `OPENMEOW_DB_PATH`).
+On startup the app loads a local `.env` file (if present) and creates the
+`data/` and `uploads/` directories and applies database migrations
+automatically. Real environment variables that are already set take precedence
+over `.env`. The SQLite database lives at `data/openmeow.db` by default
+(override with `OPENMEOW_DB_PATH`).
 
 ### Key environment variables
 
@@ -138,7 +140,7 @@ npm ci --omit=dev
 npm install -g pm2
 
 # 2. Configure the environment (admin credentials, port, …)
-cp .env.example .env && nano .env      # set ADMIN_USERNAME / ADMIN_PASSWORD
+cp .env.example .env && nano .env      # set ADMIN_USERNAME / ADMIN_PASSWORD, PORT=8020, …
 
 # 3. Apply database migrations
 npm run migrate
@@ -151,11 +153,23 @@ pm2 save
 pm2 startup            # then run the command it prints (sets up the boot service)
 ```
 
+Set the listening port with `PORT` in `.env` (e.g. `PORT=8020`) — the app loads
+`.env` on startup. The ecosystem file deliberately does **not** hardcode `PORT`,
+so `.env` controls it; if you'd rather pin it in PM2, uncomment `PORT` in
+`ecosystem.config.cjs` instead.
+
 `NODE_ENV=production` (set by the ecosystem file) enables Secure cookies, so put
 the app behind HTTPS — typically a reverse proxy (nginx / Caddy) terminating TLS
-and forwarding to `PORT` (default `3000`). The database and uploads persist to
-`./data` and `./uploads`; back those directories up. SMTP for real login email
-is configured at runtime in **/admin → Settings**.
+and forwarding to `PORT`. The database and uploads persist to `./data` and
+`./uploads`; back those directories up. SMTP for real login email is configured
+at runtime in **/admin → Settings**.
+
+The ecosystem file pins the Node.js runtime via `NODE_BIN` (defaults to whatever
+`node` is on `PATH`). To run under a specific Node version managed by nvm:
+
+```bash
+PM2_NODE_BIN="$(nvm which 21)" pm2 start ecosystem.config.cjs
+```
 
 ```bash
 # Day-to-day operations
