@@ -433,6 +433,7 @@ GET  /api/auth/me                                              -> 200 { user } |
 ```
 GET    /api/posts?cursor=&limit=        -> 200 { items: PostCard[], nextCursor }
 GET    /api/feed?tab=foryou&cursor=     -> 200 { html, nextCursor }   # rendered card HTML for infinite scroll
+GET    /api/users/:username/posts?cursor= -> 200 { html, nextCursor } # a user's published posts (profile infinite scroll)
 POST   /api/posts                        body: CreatePostInput   -> 201 { post }
 GET    /api/posts/:id                                            -> 200 { post }
 PUT    /api/posts/:id                     body: UpdatePostInput  -> 200 { post }

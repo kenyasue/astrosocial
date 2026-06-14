@@ -302,15 +302,29 @@ export class PostRepository {
     return row.c;
   }
 
-  /** A user's published posts, newest-first (for the public profile grid). */
-  listPublishedByUser(userId: string, limit = 30): PostCard[] {
-    const rows = this.db
-      .prepare(
-        `SELECT ${CARD_COLUMNS} ${CARD_FROM}
-         WHERE p.user_id = ? AND p.status = 'published'
-         ORDER BY p.published_at DESC LIMIT ?`
-      )
-      .all(userId, limit) as CardRow[];
+  /**
+   * A user's published posts, newest-first (for the public profile grid).
+   * Pass `cursor` (the previous page's last `published_at`) to page through;
+   * paginates on `published_at < cursor`, mirroring {@link listPublished}.
+   */
+  listPublishedByUser(userId: string, limit = 30, cursor?: string): PostCard[] {
+    const rows = (
+      cursor
+        ? this.db
+            .prepare(
+              `SELECT ${CARD_COLUMNS} ${CARD_FROM}
+               WHERE p.user_id = ? AND p.status = 'published' AND p.published_at < ?
+               ORDER BY p.published_at DESC LIMIT ?`
+            )
+            .all(userId, cursor, limit)
+        : this.db
+            .prepare(
+              `SELECT ${CARD_COLUMNS} ${CARD_FROM}
+               WHERE p.user_id = ? AND p.status = 'published'
+               ORDER BY p.published_at DESC LIMIT ?`
+            )
+            .all(userId, limit)
+    ) as CardRow[];
     return rows.map(mapCard);
   }
 

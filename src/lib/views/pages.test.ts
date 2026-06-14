@@ -7,6 +7,7 @@ import {
   postDetailPage,
   homePage,
   buildFeedPage,
+  nextCursorFor,
   setShellContext,
 } from './pages';
 import {
@@ -331,11 +332,67 @@ describe('infinite-scroll feed', () => {
       expect(html).toContain('aria-live="polite"');
       expect(html).toContain('data-testid="load-more"');
       expect(html).toContain('IntersectionObserver');
-      expect(html).toContain('/api/feed?tab=foryou&cursor=');
+      // The fetch endpoint now lives in a (HTML-escaped) data attribute on the row.
+      expect(html).toContain('data-grid="feed"');
+      expect(html).toContain('/api/feed?tab=foryou&amp;cursor=');
     });
 
     it('omits the load-more row and script when there are no more posts', () => {
       const html = homePage({ tab: 'foryou', loggedIn: false, feed, nextCursor: null, timeline: [] });
+      expect(html).not.toContain('data-testid="load-more-row"');
+      expect(html).not.toContain('IntersectionObserver');
+    });
+  });
+
+  describe('nextCursorFor', () => {
+    it('returns the last card publishedAt when a full page was returned', () => {
+      const cards = [card('p1', '2026-06-12T00:00:00.000Z'), card('p2', '2026-06-11T00:00:00.000Z')];
+      expect(nextCursorFor(cards, 2)).toBe('2026-06-11T00:00:00.000Z');
+    });
+
+    it('returns null on a short page (end reached) and for no cards', () => {
+      expect(nextCursorFor([card('p1', '2026-06-12T00:00:00.000Z')], 2)).toBeNull();
+      expect(nextCursorFor([], 12)).toBeNull();
+    });
+  });
+
+  describe('profilePage auto-load markup', () => {
+    const profile: ProfileView = {
+      username: 'ken',
+      displayName: 'Ken',
+      bio: '',
+      avatarMediaId: null,
+      coverMediaId: null,
+      websiteUrl: null,
+      location: null,
+      dmPolicy: 'everyone',
+      createdAt: '2026-06-13T00:00:00.000Z',
+      postCount: 20,
+      followerCount: 0,
+      followingCount: 0,
+      avatarUrl: null,
+      coverUrl: null,
+    };
+    const posts = [card('p1', '2026-06-12T00:00:00.000Z')];
+
+    it('renders the profile load-more row targeting the profile grid + endpoint when more posts exist', () => {
+      const html = profilePage(profile, false, posts, {
+        loggedIn: false,
+        isFollowing: false,
+        nextCursor: '2026-06-11T00:00:00.000Z',
+      });
+      expect(html).toContain('data-testid="load-more-row"');
+      expect(html).toContain('data-grid="profile-posts"');
+      expect(html).toContain('data-cursor="2026-06-11T00:00:00.000Z"');
+      expect(html).toContain('/api/users/ken/posts?cursor=');
+      expect(html).toContain('IntersectionObserver');
+      // Manual fallback link navigates to the same profile with a cursor query.
+      expect(html).toContain('href="/@ken?cursor=2026-06-11T00%3A00%3A00.000Z"');
+    });
+
+    it('omits the load-more row when there are no more posts', () => {
+      const html = profilePage(profile, false, posts, { loggedIn: false, isFollowing: false });
+      expect(html).toContain('data-testid="profile-posts"');
       expect(html).not.toContain('data-testid="load-more-row"');
       expect(html).not.toContain('IntersectionObserver');
     });

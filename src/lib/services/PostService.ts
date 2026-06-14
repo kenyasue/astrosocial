@@ -159,11 +159,14 @@ export class PostService {
     return this.posts.listPublished(limit, cursor);
   }
 
-  /** A user's published posts for their public profile grid. */
-  listPublishedByUsername(username: string, limit = 30): PostCard[] {
+  /**
+   * A user's published posts for their public profile grid. Pass `cursor` (the
+   * previous page's last `published_at`) to page through for infinite scroll.
+   */
+  listPublishedByUsername(username: string, limit = 30, cursor?: string): PostCard[] {
     const user = this.users.findByUsername(username);
     if (!user) return [];
-    return this.posts.listPublishedByUser(user.id, limit);
+    return this.posts.listPublishedByUser(user.id, limit, cursor);
   }
 
   listOwn(userId: string): PostCard[] {

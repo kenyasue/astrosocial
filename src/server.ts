@@ -42,6 +42,7 @@ import {
   messagesInboxPage,
   conversationPage,
   buildFeedPage,
+  nextCursorFor,
   setShellContext,
   type ShellContext,
   STYLESHEET,
@@ -631,6 +632,18 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 204, {});
     }
 
+    // Next page of a user's published posts as rendered card HTML, for the
+    // profile-grid infinite scroll. Unknown user → an empty terminal page.
+    const profilePostsMatch = pathname.match(/^\/api\/users\/([^/]+)\/posts$/);
+    if (profilePostsMatch && method === 'GET') {
+      const username = decodeURIComponent(profilePostsMatch[1]);
+      const cursor = url.searchParams.get('cursor') ?? undefined;
+      const posts = app.posts.listPublishedByUsername(username, FEED_PAGE_SIZE, cursor);
+      return sendJson(res, 200, buildFeedPage(posts, FEED_PAGE_SIZE), {
+        'Cache-Control': 'private, no-cache',
+      });
+    }
+
     const followMatch = pathname.match(/^\/api\/users\/([^/]+)\/follow$/);
     if (followMatch && (method === 'POST' || method === 'DELETE')) {
       const user = requireUser(req);
@@ -765,13 +778,11 @@ const server = http.createServer(async (req, res) => {
 
     // --- HTML pages ---------------------------------------------------------
     if (pathname === '/' && method === 'GET') {
-      const limit = FEED_PAGE_SIZE;
       const viewer = currentUser(req);
       const tab = url.searchParams.get('tab') === 'following' && viewer ? 'following' : 'foryou';
       const cursor = url.searchParams.get('cursor') ?? undefined;
-      const feed = tab === 'foryou' ? app.posts.listFeed(limit, cursor) : [];
-      const nextCursor =
-        feed.length === limit ? (feed[feed.length - 1].publishedAt ?? null) : null;
+      const feed = tab === 'foryou' ? app.posts.listFeed(FEED_PAGE_SIZE, cursor) : [];
+      const nextCursor = nextCursorFor(feed, FEED_PAGE_SIZE);
       const timeline = tab === 'following' && viewer ? app.social.timeline(viewer.id) : [];
       return sendHtml(
         res,
@@ -998,14 +1009,20 @@ const server = http.createServer(async (req, res) => {
       try {
         const profile = app.profiles.getPublicProfile(username);
         const viewer = currentUser(req);
-        const posts = app.posts.listPublishedByUsername(username);
+        // `cursor` powers the no-JS "Load more" fallback (page 2+ as a normal nav).
+        const cursor = url.searchParams.get('cursor') ?? undefined;
+        const posts = app.posts.listPublishedByUsername(username, FEED_PAGE_SIZE, cursor);
         const isOwner = viewer?.username === username;
         const isFollowing =
           viewer && !isOwner ? app.social.isFollowing(viewer.id, username) : false;
         return sendHtml(
           res,
           200,
-          profilePage(profile, isOwner, posts, { loggedIn: !!viewer, isFollowing })
+          profilePage(profile, isOwner, posts, {
+            loggedIn: !!viewer,
+            isFollowing,
+            nextCursor: nextCursorFor(posts, FEED_PAGE_SIZE),
+          })
         );
       } catch (error) {
         if (error instanceof AppError && error.code === 'not_found') {

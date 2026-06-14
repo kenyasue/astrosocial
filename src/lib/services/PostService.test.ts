@@ -90,6 +90,19 @@ describe('PostRepository', () => {
     expect(page.map((p) => p.slug)).toEqual(['a']); // strictly older than the cursor
   });
 
+  it('listPublishedByUser_paginates_withLimitAndCursor', () => {
+    make('a', 'published', '2026-01-01T00:00:00.000Z');
+    make('b', 'published', '2026-02-01T00:00:00.000Z');
+    make('c', 'published', '2026-03-01T00:00:00.000Z');
+    make('draft', 'draft', null);
+    // First page (limit 2): newest two.
+    const first = repo.listPublishedByUser(user.id, 2);
+    expect(first.map((p) => p.slug)).toEqual(['c', 'b']);
+    // Next page from the last cursor: strictly older, drafts excluded.
+    const second = repo.listPublishedByUser(user.id, 2, first[first.length - 1].publishedAt!);
+    expect(second.map((p) => p.slug)).toEqual(['a']);
+  });
+
   it('update_changesOnlyProvidedFields', () => {
     const p = make('hello', 'draft', null);
     const updated = repo.update(p.id, { title: 'New' });

@@ -237,7 +237,10 @@ export function profilePage(
   profile: ProfileView,
   isOwner: boolean,
   posts: PostCard[] = [],
-  opts: { loggedIn: boolean; isFollowing: boolean } = { loggedIn: false, isFollowing: false }
+  opts: { loggedIn: boolean; isFollowing: boolean; nextCursor?: string | null } = {
+    loggedIn: false,
+    isFollowing: false,
+  }
 ): string {
   const followControl =
     opts.loggedIn && !isOwner
@@ -315,7 +318,17 @@ export function profilePage(
   ${
     posts.length === 0
       ? `<p class="muted" data-testid="profile-empty">No published posts yet.</p>`
-      : `<div class="card-grid" data-testid="profile-posts">${posts.map(postCard).join('')}</div>`
+      : `<div class="card-grid" data-testid="profile-posts">${posts.map(postCard).join('')}</div>
+        ${
+          opts.nextCursor
+            ? loadMoreRow({
+                grid: 'profile-posts',
+                endpoint: `/api/users/${encodeURIComponent(profile.username)}/posts?cursor=`,
+                fallback: `/@${encodeURIComponent(profile.username)}?cursor=`,
+                cursor: opts.nextCursor,
+              })
+            : ''
+        }`
   }
   `
   );
@@ -1197,17 +1210,22 @@ export function postCard(card: PostCard): string {
  * full page was returned, else null to signal the end). Shared by the
  * `/api/feed` endpoint so server pagination stays in one place.
  */
+/**
+ * The cursor for the next page given a slice of cards: the last card's publish
+ * time when a full page was returned, else null (signals the end). The query
+ * paginates on `published_at < cursor`. Posts sharing an identical timestamp at
+ * a page boundary can be skipped — a known limitation inherited from the existing
+ * feed pagination (see the steering design doc), not introduced here.
+ */
+export function nextCursorFor(cards: PostCard[], pageSize: number): string | null {
+  return cards.length === pageSize ? (cards[cards.length - 1].publishedAt ?? null) : null;
+}
+
 export function buildFeedPage(
   cards: PostCard[],
   pageSize: number
 ): { html: string; nextCursor: string | null } {
-  // The cursor is the last card's publish time; the underlying query paginates
-  // on `published_at < cursor`. Posts that share an identical timestamp at a
-  // page boundary can be skipped — a known limitation inherited from the
-  // existing feed pagination (see the steering design doc), not introduced here.
-  const nextCursor =
-    cards.length === pageSize ? (cards[cards.length - 1].publishedAt ?? null) : null;
-  return { html: cards.map(postCard).join(''), nextCursor };
+  return { html: cards.map(postCard).join(''), nextCursor: nextCursorFor(cards, pageSize) };
 }
 
 /** A single comment list item with the commenter's avatar and username. */
@@ -1382,15 +1400,22 @@ export function timelinePage(items: TimelineItem[]): string {
 
 /** Public home page: latest published posts as a card grid with pagination. */
 /**
- * Infinite-scroll for the "For you" feed: when the load-more row nears the
- * viewport, fetch the next page of cards and append them. Progressive
- * enhancement — if IntersectionObserver is unavailable or a fetch fails, the
- * manual "Load more" link keeps working as a normal paginated navigation.
+ * Infinite-scroll for a card grid (home feed or profile grid): when the
+ * load-more row nears the viewport, fetch the next page of cards and append them.
+ * The row carries everything via `data-*`: `data-grid` (target grid testid),
+ * `data-endpoint` (fetch URL prefix, cursor appended), `data-fallback` (manual
+ * link href prefix), and `data-cursor`. Progressive enhancement — if
+ * IntersectionObserver is unavailable or a fetch fails, the manual "Load more"
+ * link keeps working as a normal paginated navigation.
  */
 const AUTO_LOAD_SCRIPT = `(function(){
   var row = document.querySelector('[data-testid="load-more-row"]');
-  var grid = document.querySelector('[data-testid="feed"]');
-  if(!row || !grid || !('IntersectionObserver' in window)) return;
+  if(!row || row.dataset.autoLoadInit || !('IntersectionObserver' in window)) return;
+  row.dataset.autoLoadInit = '1';
+  var grid = document.querySelector('[data-testid="' + row.getAttribute('data-grid') + '"]');
+  if(!grid) return;
+  var endpoint = row.getAttribute('data-endpoint');
+  var fallback = row.getAttribute('data-fallback');
   var link = row.querySelector('[data-testid="load-more"]');
   var loadingEl = row.querySelector('[data-testid="feed-loading"]');
   var cursor = row.getAttribute('data-cursor');
@@ -1401,13 +1426,13 @@ const AUTO_LOAD_SCRIPT = `(function(){
     if(loading || !cursor) return;
     loading = true;
     if(loadingEl){ loadingEl.hidden = false; }
-    fetch('/api/feed?tab=foryou&cursor=' + encodeURIComponent(cursor))
+    fetch(endpoint + encodeURIComponent(cursor))
       .then(function(res){ if(!res.ok) throw new Error('bad status'); return res.json(); })
       .then(function(data){
         if(data.html){ grid.insertAdjacentHTML('beforeend', data.html); }
         cursor = data.nextCursor;
         if(!cursor){ stop(); return; }
-        if(link){ link.setAttribute('href', '/?tab=foryou&cursor=' + encodeURIComponent(cursor)); }
+        if(link){ link.setAttribute('href', fallback + encodeURIComponent(cursor)); }
       })
       .catch(function(){
         // Stop auto-loading and restore the manual link so the user can retry.
@@ -1424,6 +1449,30 @@ const AUTO_LOAD_SCRIPT = `(function(){
   }, { rootMargin: '400px' });
   obs.observe(row);
 })();`;
+
+/**
+ * Render the load-more row (loading indicator + manual fallback link) plus the
+ * auto-load script, shared by the home feed and the profile grid. `endpoint` and
+ * `fallback` are URL prefixes to which the (encoded) cursor is appended; `grid`
+ * is the target grid's `data-testid`.
+ */
+function loadMoreRow(opts: {
+  grid: string;
+  endpoint: string;
+  fallback: string;
+  cursor: string;
+}): string {
+  const href = `${escapeHtml(opts.fallback)}${encodeURIComponent(opts.cursor)}`;
+  return `<div class="load-more-row" data-testid="load-more-row"
+      data-grid="${escapeHtml(opts.grid)}" data-cursor="${escapeHtml(opts.cursor)}"
+      data-endpoint="${escapeHtml(opts.endpoint)}" data-fallback="${escapeHtml(opts.fallback)}">
+      <span class="feed-loading" data-testid="feed-loading" role="status" aria-live="polite" hidden>
+        <span class="spinner" aria-hidden="true"></span> Loading more…
+      </span>
+      <a class="badge" data-testid="load-more" href="${href}">Load more</a>
+    </div>
+    <script>${AUTO_LOAD_SCRIPT}</script>`;
+}
 
 export function homePage(opts: {
   tab: 'foryou' | 'following';
@@ -1460,14 +1509,12 @@ export function homePage(opts: {
       ? `<div class="card-grid" data-testid="feed">${feed.map(postCard).join('')}</div>
         ${
           nextCursor
-            ? `<div class="load-more-row" data-testid="load-more-row" data-cursor="${escapeHtml(nextCursor)}">
-                <span class="feed-loading" data-testid="feed-loading" role="status" aria-live="polite" hidden>
-                  <span class="spinner" aria-hidden="true"></span> Loading more…
-                </span>
-                <a class="badge" data-testid="load-more"
-                  href="/?tab=foryou&amp;cursor=${encodeURIComponent(nextCursor)}">Load more</a>
-              </div>
-              <script>${AUTO_LOAD_SCRIPT}</script>`
+            ? loadMoreRow({
+                grid: 'feed',
+                endpoint: '/api/feed?tab=foryou&cursor=',
+                fallback: '/?tab=foryou&cursor=',
+                cursor: nextCursor,
+              })
             : ''
         }`
       : `<p class="feed-empty" data-testid="feed-empty">No posts yet. Be the first to publish!</p>`;
