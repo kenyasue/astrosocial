@@ -172,6 +172,15 @@ pm2 delete astrosocial         # remove from PM2
 
 To deploy a new version: `git pull && npm ci --omit=dev && npm run migrate && pm2 restart astrosocial`.
 
+> **Changed `ecosystem.config.cjs`?** `pm2 restart` reuses the cached `script`/`args`.
+> After editing the ecosystem file you must recreate the process:
+> `pm2 delete astrosocial && pm2 start ecosystem.config.cjs`.
+>
+> **`ERR_UNKNOWN_FILE_EXTENSION ".ts"`** means PM2 launched plain `node` without
+> the tsx loader. Make sure dependencies are installed (`tsx` is a runtime
+> dependency) and that you recreated the process with the current ecosystem
+> file as above.
+
 ### Run with Docker
 
 ```bash

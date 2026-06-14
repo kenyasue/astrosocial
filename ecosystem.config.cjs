@@ -10,11 +10,16 @@ module.exports = {
   apps: [
     {
       name: 'astrosocial',
-      // Run the TypeScript entrypoint directly through the tsx loader
-      // (no build step required), matching `npm start`.
-      script: 'src/server.ts',
+      // Run the TypeScript entrypoint through the tsx CLI (no build step),
+      // matching `npm start`. We invoke tsx's CLI as the script rather than
+      // passing `--import tsx` via node_args: in PM2 `fork` mode the loader
+      // flags are NOT reliably forwarded to the worker, which makes node load
+      // server.ts raw and fail with ERR_UNKNOWN_FILE_EXTENSION. Running the
+      // tsx CLI directly avoids that. (Requires tsx to be a runtime
+      // dependency — it is listed under "dependencies" in package.json.)
+      script: './node_modules/tsx/dist/cli.mjs',
+      args: 'src/server.ts',
       interpreter: 'node',
-      interpreter_args: '--import tsx',
 
       instances: 1,
       exec_mode: 'fork',
