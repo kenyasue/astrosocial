@@ -197,6 +197,23 @@ describe('postDetailPage', () => {
     expect(html).toContain('data-testid="social-bar"');
   });
 
+  it('renders the lightbox share bar (copyable per-image URL)', () => {
+    const html = postDetailPage(baseView, false, social, [], false);
+    expect(html).toContain('data-testid="lightbox-share"');
+    expect(html).toContain('data-testid="lightbox-url"');
+    expect(html).toContain('data-testid="lightbox-copy"');
+  });
+
+  it('the lightbox script wires per-image URLs, history, deep-link, and copy', () => {
+    const html = postDetailPage(baseView, false, social, [], false);
+    expect(html).toContain("'#image-'"); // per-image fragment
+    expect(html).toContain('/\\/media\\/([^/]+)\\//'); // media publicId extraction regex
+    expect(html).toContain('history.pushState'); // open adds one entry
+    expect(html).toContain('history.replaceState'); // nav/close rewrites the URL
+    expect(html).toContain("addEventListener('popstate'"); // back/forward sync
+    expect(html).toContain('clipboard'); // copy-to-clipboard
+  });
+
   const author: ProfileView = {
     username: 'ken',
     displayName: 'Ken',

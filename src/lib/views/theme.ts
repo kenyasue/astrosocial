@@ -531,7 +531,18 @@ select { width: 100%; padding: 12px 14px; background: var(--surface-2); color: v
   width: 40px; height: 40px; border-radius: 50%; font-size: 1.2rem; }
 .lightbox-hint { position: absolute; bottom: 18px; right: 18px; max-width: 60vw; margin: 0;
   color: rgba(255, 255, 255, 0.7); font-size: 0.8rem; text-align: right; pointer-events: none; }
-@media (max-width: 560px) { .lightbox-hint { display: none; } }
+.lightbox-share { position: absolute; top: 16px; left: 18px; display: flex; gap: 8px;
+  align-items: center; max-width: min(70vw, 560px);
+  background: rgba(0, 0, 0, 0.45); padding: 6px 8px; border-radius: 999px; }
+.lightbox-url { flex: 1; min-width: 0; background: rgba(255, 255, 255, 0.12); color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 999px; padding: 7px 12px;
+  font-size: 0.82rem; text-overflow: ellipsis; }
+.lightbox-share .ghost { background: rgba(255, 255, 255, 0.15); color: #fff; border-color: transparent;
+  border-radius: 999px; padding: 7px 14px; font-size: 0.82rem; white-space: nowrap; }
+@media (max-width: 560px) {
+  .lightbox-hint { display: none; }
+  .lightbox-share { top: 12px; left: 12px; right: 56px; max-width: none; }
+}
 @media (prefers-reduced-motion: reduce) { .lightbox-img { transition: none; } }
 
 @media (max-width: 560px) {

@@ -1004,6 +1004,11 @@ function lightboxMarkup(): string {
     <button class="lightbox-nav lightbox-prev" type="button" data-testid="lightbox-prev" aria-label="Previous image">‹</button>
     <img class="lightbox-img" id="lightbox-img" data-testid="lightbox-img" alt="" />
     <button class="lightbox-nav lightbox-next" type="button" data-testid="lightbox-next" aria-label="Next image">›</button>
+    <div class="lightbox-share" data-testid="lightbox-share">
+      <input class="lightbox-url" id="lightbox-url" type="text" readonly data-testid="lightbox-url"
+        aria-label="Image link" />
+      <button class="ghost" type="button" data-testid="lightbox-copy">Copy link</button>
+    </div>
     <div class="lightbox-zoom">
       <button class="ghost" type="button" data-testid="lightbox-zoom-out" aria-label="Zoom out">−</button>
       <button class="ghost" type="button" data-testid="lightbox-zoom-in" aria-label="Zoom in">+</button>
@@ -1031,10 +1036,36 @@ function lightboxScript(selector: string): string {
     const items = Array.from(document.querySelectorAll(${JSON.stringify(selector)}));
     if (!items.length) { box.remove(); return; }
     const closeBtn = box.querySelector('[data-testid="lightbox-close"]');
+    const urlField = document.getElementById('lightbox-url');
+    const copyBtn = box.querySelector('[data-testid="lightbox-copy"]');
     const MIN = 1, MAX = 6;
     let idx = 0, scale = 1, tx = 0, ty = 0, lastFocus = null;
     let spaceDown = false, shiftDown = false, panning = false;
     let panStartX = 0, panStartY = 0, panOrigX = 0, panOrigY = 0, justPanned = false;
+    // Whether the current '#image-…' history entry was pushed by a click-open
+    // (so closing should pop it and return to the post) vs a deep-link load.
+    let weOwnHistory = false;
+
+    // Each image's stable id: its media publicId (from '/media/<id>/…') or a
+    // 1-based fallback. Drives the shareable per-image URL fragment. Ids must be
+    // unique, so a repeated asset falls back to its index (otherwise two images
+    // would share a fragment and the second could not be deep-linked).
+    const usedIds = {};
+    const ids = items.map((el, i) => {
+      const src = el.getAttribute('data-full') || el.currentSrc || el.src || '';
+      const m = src.match(/\\/media\\/([^/]+)\\//);
+      const id = m && !usedIds[m[1]] ? m[1] : 'img-' + (i + 1);
+      usedIds[id] = true;
+      return id;
+    });
+    const hashFor = (i) => '#image-' + ids[i];
+    const urlFor = (i) => location.origin + location.pathname + location.search + hashFor(i);
+    const postUrl = () => location.pathname + location.search;
+    function indexFromHash() {
+      const h = location.hash || '';
+      if (h.indexOf('#image-') !== 0) return -1;
+      return ids.indexOf(h.slice('#image-'.length));
+    }
 
     function clampPan() {
       if (scale <= 1) { tx = 0; ty = 0; return; }
@@ -1076,8 +1107,12 @@ function lightboxScript(selector: string): string {
       imgEl.src = src;
       imgEl.alt = items[idx].alt || '';
       updateCursor();
+      // Reflect the current image in the address bar (no new history entry) and
+      // in the copyable absolute-URL field.
+      history.replaceState(null, '', urlFor(idx));
+      if (urlField) urlField.value = urlFor(idx);
     }
-    function open(i) {
+    function openUI(i) {
       lastFocus = document.activeElement;
       spaceDown = false; shiftDown = false; panning = false;
       show(i);
@@ -1085,7 +1120,7 @@ function lightboxScript(selector: string): string {
       document.body.style.overflow = 'hidden';
       closeBtn.focus();
     }
-    function close() {
+    function closeUI() {
       box.hidden = true; box.setAttribute('aria-hidden', 'true');
       document.body.style.overflow = '';
       // Reset transient tool state so the next open starts on the magnifier.
@@ -1093,10 +1128,55 @@ function lightboxScript(selector: string): string {
       imgEl.style.transition = '';
       if (lastFocus && lastFocus.focus) lastFocus.focus();
     }
+    // Click-open: add one history entry so X (and browser Back) returns to the post.
+    function open(i) {
+      history.pushState(null, '', hashFor(i));
+      weOwnHistory = true;
+      openUI(i);
+    }
+    // X / Esc / backdrop: pop our entry (returns to the post URL) or, for a
+    // deep-link open with nothing to pop, just strip the fragment.
+    function close() {
+      if (weOwnHistory) {
+        weOwnHistory = false;
+        history.back(); // returns to the post URL; popstate then runs closeUI
+        // Defensive: if popstate never fires (e.g. no entry to pop), close anyway.
+        setTimeout(() => { if (!box.hidden) { history.replaceState(null, '', postUrl()); closeUI(); } }, 200);
+      } else {
+        history.replaceState(null, '', postUrl());
+        closeUI();
+      }
+    }
 
     items.forEach((el, i) => {
       el.style.cursor = 'zoom-in';
       el.addEventListener('click', (e) => { e.preventDefault(); open(i); });
+    });
+
+    // Browser navigation (Back/Forward) syncs the overlay to the URL fragment.
+    window.addEventListener('popstate', () => {
+      const target = indexFromHash();
+      if (!box.hidden && target === -1) { closeUI(); }
+      else if (!box.hidden && target !== idx) { show(target); }
+      else if (box.hidden && target !== -1) { weOwnHistory = false; openUI(target); }
+    });
+
+    // Copy the current image's absolute URL.
+    if (copyBtn) copyBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const url = urlField ? urlField.value : urlFor(idx);
+      const done = () => {
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => { copyBtn.textContent = 'Copy link'; }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done).catch(() => {
+          if (urlField) { urlField.select(); try { document.execCommand('copy'); } catch (e2) {} done(); }
+        });
+      } else if (urlField) {
+        urlField.select(); try { document.execCommand('copy'); } catch (e3) {}
+        done();
+      }
     });
 
     // Magnifier: click zooms in (Shift+click out) about the cursor point.
@@ -1153,6 +1233,11 @@ function lightboxScript(selector: string): string {
       if (e.code === 'Space' || e.key === ' ') { spaceDown = false; panning = false; updateCursor(); }
       else if (e.key === 'Shift') { shiftDown = false; updateCursor(); }
     });
+
+    // Deep link: if the page loaded with a '#image-…' fragment naming one of our
+    // images, open the lightbox on it straight away.
+    const initial = indexFromHash();
+    if (initial !== -1) { weOwnHistory = false; openUI(initial); }
   })();
   </script>`;
 }
