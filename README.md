@@ -126,6 +126,52 @@ Run without auto-reload with `npm start`. Seed some demo content with
 `npm run seed`. Migrations are applied on startup, or manually with
 `npm run migrate`.
 
+## Run in production (PM2)
+
+[PM2](https://pm2.keymetrics.io/) keeps the app running, restarts it on crash,
+and starts it on boot. A ready-made [`ecosystem.config.cjs`](ecosystem.config.cjs)
+is included.
+
+```bash
+# 1. Install dependencies (production only) and PM2
+npm ci --omit=dev
+npm install -g pm2
+
+# 2. Configure the environment (admin credentials, port, …)
+cp .env.example .env && nano .env      # set ADMIN_USERNAME / ADMIN_PASSWORD
+
+# 3. Apply database migrations
+npm run migrate
+
+# 4. Start under PM2 (runs src/server.ts via the tsx loader, NODE_ENV=production)
+pm2 start ecosystem.config.cjs
+
+# 5. Persist the process list and enable start-on-boot
+pm2 save
+pm2 startup            # then run the command it prints (sets up the boot service)
+```
+
+`NODE_ENV=production` (set by the ecosystem file) enables Secure cookies, so put
+the app behind HTTPS — typically a reverse proxy (nginx / Caddy) terminating TLS
+and forwarding to `PORT` (default `3000`). The database and uploads persist to
+`./data` and `./uploads`; back those directories up. SMTP for real login email
+is configured at runtime in **/admin → Settings**.
+
+```bash
+# Day-to-day operations
+pm2 status                     # process state, CPU, memory, restarts
+pm2 logs astrosocial           # tail logs
+pm2 restart astrosocial        # restart after pulling new code + `npm run migrate`
+pm2 stop astrosocial           # stop
+pm2 delete astrosocial         # remove from PM2
+```
+
+> **One instance only.** SQLite is a single-writer database, so the app runs in
+> PM2 `fork` mode with `instances: 1`. Do not switch to `cluster` mode or scale
+> to multiple instances against the same database file.
+
+To deploy a new version: `git pull && npm ci --omit=dev && npm run migrate && pm2 restart astrosocial`.
+
 ### Run with Docker
 
 ```bash
