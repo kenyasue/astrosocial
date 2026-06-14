@@ -218,12 +218,17 @@ mode the PIN is fixed (`000000`) and email is not sent.
   (`ADMIN_USERNAME`/`ADMIN_PASSWORD`) with a constant-time compare; mint/validate/expire an
   in-memory admin session (separate `as_admin` HttpOnly cookie).
 - Moderation: list/edit/delete users (transactional cascade via `AdminRepository`), posts
-  (`PostRepository.deleteWithDependents`), and comments (soft delete).
+  (`PostRepository.deleteWithDependents`), and comments (soft delete). The user edit form
+  also updates the **email address** (identity, not a profile field): on save it is
+  normalized (trim + lower-case) and validated for format and uniqueness, with an inline
+  error (400) on failure; the DB `UNIQUE` index is the backstop for a concurrent collision.
 - Read/save settings (via `SettingsService` over the `app_settings` key/value table):
   SMTP delivery; **site name + description**; and a **login-email template** supporting the
   tags `{PIN}` and `{sitename}`. `SettingsService.renderLoginEmail(pin)` substitutes the tags
   (defaults applied when blank) for both SMTP sends and the console fallback. The login page
-  shows the configured site name + description.
+  shows the configured site name + description, and the social app shell uses the site name
+  for the nav-rail brand, the window `<title>`, and `og:site_name` (via `ShellContext.siteName`,
+  falling back to `AstroSocial`).
 
 Admin pages are server-rendered HTML under `/admin/*` (login, dashboard, users, posts,
 comments, settings); every route except login requires a valid admin session. Mutations are

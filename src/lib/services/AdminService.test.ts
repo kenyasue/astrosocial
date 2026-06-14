@@ -64,6 +64,37 @@ describe('AdminService moderation', () => {
     expect(users.findById(u.id)!.bio).toBe('hi');
   });
 
+  it('edits a user email (normalized) and leaves other fields intact', () => {
+    const u = users.create({ email: 'old@x.com', username: 'u', displayName: 'U' });
+    const updated = app.admin.updateUser(u.id, { email: '  NEW@X.COM ', displayName: 'U' });
+    expect(updated.email).toBe('new@x.com');
+    expect(users.findById(u.id)!.email).toBe('new@x.com');
+    expect(updated.displayName).toBe('U');
+  });
+
+  it('accepts re-saving a user with their own unchanged email', () => {
+    const u = users.create({ email: 'me@x.com', username: 'me', displayName: 'Me' });
+    expect(() => app.admin.updateUser(u.id, { email: 'me@x.com', displayName: 'Me' })).not.toThrow();
+    expect(users.findById(u.id)!.email).toBe('me@x.com');
+  });
+
+  it('rejects a malformed email and does not persist it', () => {
+    const u = users.create({ email: 'good@x.com', username: 'u', displayName: 'U' });
+    expect(() => app.admin.updateUser(u.id, { email: 'not-an-email', displayName: 'U' })).toThrow(
+      ValidationError
+    );
+    expect(users.findById(u.id)!.email).toBe('good@x.com');
+  });
+
+  it('rejects an email already used by another user', () => {
+    const a = users.create({ email: 'a@x.com', username: 'a', displayName: 'A' });
+    users.create({ email: 'b@x.com', username: 'b', displayName: 'B' });
+    expect(() => app.admin.updateUser(a.id, { email: 'B@X.COM', displayName: 'A' })).toThrow(
+      ValidationError
+    );
+    expect(users.findById(a.id)!.email).toBe('a@x.com');
+  });
+
   it('edits a post title and body', () => {
     const u = users.create({ email: 'u@x.com', username: 'u', displayName: 'U' });
     const post = app.posts.create(u.id, { markdownBody: 'old body', status: 'published' });

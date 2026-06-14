@@ -18,6 +18,19 @@ export default tseslint.config(
     },
   },
   {
+    // CommonJS config files (e.g. ecosystem.config.cjs) use Node/CJS globals.
+    files: ['**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        process: 'readonly',
+        module: 'writable',
+        require: 'readonly',
+        __dirname: 'readonly',
+      },
+    },
+  },
+  {
     ignores: [
       'node_modules/**',
       'dist/**',

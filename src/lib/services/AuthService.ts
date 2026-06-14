@@ -22,8 +22,7 @@ import type { EmailProvider } from '../auth/email';
 import type { UserRepository } from '../db/repositories/UserRepository';
 import type { LoginPinRepository } from '../db/repositories/LoginPinRepository';
 import type { SessionRepository } from '../db/repositories/SessionRepository';
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import { isValidEmail, normalizeEmail } from '../email/address';
 
 export interface VerifyResult {
   user: User;
@@ -45,7 +44,7 @@ export class AuthService {
    */
   async requestPin(emailRaw: string): Promise<void> {
     const email = normalizeEmail(emailRaw);
-    if (!EMAIL_RE.test(email)) {
+    if (!isValidEmail(email)) {
       throw new ValidationError('A valid email address is required', 'email');
     }
 
@@ -143,8 +142,4 @@ export class AuthService {
     // Extremely unlikely fallback.
     return `${base}${Date.now()}`;
   }
-}
-
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
 }

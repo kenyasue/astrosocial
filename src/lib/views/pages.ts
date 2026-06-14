@@ -48,12 +48,18 @@ export interface ShellContext {
   loggedIn: boolean;
   unreadNotifications: number;
   unreadMessages: number;
+  /** Configured site name (DB value, or the default when unset). */
+  siteName: string;
 }
+
+/** Fallback site name when no admin value is configured. */
+const DEFAULT_SITE_NAME = 'AstroSocial';
 
 const EMPTY_SHELL: ShellContext = {
   loggedIn: false,
   unreadNotifications: 0,
   unreadMessages: 0,
+  siteName: DEFAULT_SITE_NAME,
 };
 
 let shellCtx: ShellContext = EMPTY_SHELL;
@@ -73,7 +79,7 @@ function navRail(): string {
     `<li><a href="${href}" data-testid="${testid}"><span class="ic" aria-hidden="true">${icon}</span><span class="label">${label}</span>${badge}</a></li>`;
   return `
   <nav class="rail" aria-label="Primary">
-    <a class="rail-brand" href="/"><span class="ic" aria-hidden="true">🍺</span><span class="label">AstroSocial</span></a>
+    <a class="rail-brand" href="/"><span class="ic" aria-hidden="true">🍺</span><span class="label">${escapeHtml(shellCtx.siteName)}</span></a>
     <ul class="rail-nav">
       ${item('/', '🏠', 'Home', 'nav-home')}
       ${item('/explore', '👤', 'Users', 'nav-users')}
@@ -92,7 +98,9 @@ function navRail(): string {
         ? `<button class="rail-logout" id="rail-logout" data-testid="rail-logout" type="button"
             aria-label="Log out" title="Log out">
             <span class="ic" aria-hidden="true">🚪</span><span class="label">Log out</span></button>`
-        : ''
+        : `<a class="rail-logout" href="/login" data-testid="rail-login"
+            aria-label="Log in" title="Log in">
+            <span class="ic" aria-hidden="true">🔑</span><span class="label">Log in</span></a>`
     }
   </nav>`;
 }
@@ -120,13 +128,13 @@ function layout(title: string, body: string, opts: { head?: string } = {}): stri
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(title)} · AstroSocial</title>
+  <title>${escapeHtml(title)} · ${escapeHtml(shellCtx.siteName)}</title>
   <link rel="stylesheet" href="/styles.css" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#0f1115" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/icon-192.png" />
-  <meta property="og:site_name" content="AstroSocial" />
+  <meta property="og:site_name" content="${escapeHtml(shellCtx.siteName)}" />
   ${opts.head ?? `<meta property="og:title" content="${escapeHtml(title)}" /><meta property="og:type" content="website" />`}
   <script>${THEME_INIT_SCRIPT}</script>
 </head>

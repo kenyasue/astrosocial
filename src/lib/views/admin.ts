@@ -144,14 +144,18 @@ export function adminUsersPage(users: AdminUserRow[]): string {
   });
 }
 
-/** Edit form for a single user's profile fields. */
-export function adminUserEditPage(user: User): string {
+/** Edit form for a single user's profile fields. `error` shows a save problem. */
+export function adminUserEditPage(user: User, error = ''): string {
   return adminLayout(
     'Edit user',
     `
     <h1 style="margin-bottom:16px">Edit @${escapeHtml(user.username)}</h1>
     <div class="card">
+      ${error ? `<p class="error" role="alert" data-testid="admin-user-error">${escapeHtml(error)}</p>` : ''}
       <form method="POST" action="/admin/users/${escapeHtml(user.id)}" data-testid="admin-user-form">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" value="${escapeHtml(user.email)}"
+          autocomplete="off" required />
         <label for="displayName">Display name</label>
         <input id="displayName" name="displayName" value="${escapeHtml(user.displayName)}" required />
         <label for="bio">Bio</label>

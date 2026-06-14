@@ -179,9 +179,10 @@ function buildShell(req: http.IncomingMessage): ShellContext {
       loggedIn: !!viewer,
       unreadNotifications: viewer ? app.notifications.unreadCount(viewer.id) : 0,
       unreadMessages: viewer ? app.dm.unreadCount(viewer.id) : 0,
+      siteName: app.settings.getSite().name,
     };
   } catch {
-    return { loggedIn: false, unreadNotifications: 0, unreadMessages: 0 };
+    return { loggedIn: false, unreadNotifications: 0, unreadMessages: 0, siteName: 'AstroSocial' };
   }
 }
 
@@ -194,6 +195,11 @@ function requireUser(req: http.IncomingMessage) {
 
 function str(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+/** True for a SQLite UNIQUE-constraint violation on the users.email column. */
+function isUniqueEmailError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('UNIQUE constraint failed: users.email');
 }
 
 /** Parse an `application/x-www-form-urlencoded` request body (size-capped). */
@@ -266,12 +272,28 @@ async function handleAdmin(
   }
   if (userMatch && method === 'POST') {
     const form = await readFormBody(req);
-    app.admin.updateUser(userMatch[1], {
-      displayName: str(form.get('displayName')),
-      bio: str(form.get('bio')) || null,
-      websiteUrl: str(form.get('websiteUrl')) || null,
-      location: str(form.get('location')) || null,
-    });
+    try {
+      app.admin.updateUser(userMatch[1], {
+        // Only touch the email column when the form actually carries the field.
+        email: form.has('email') ? str(form.get('email')) : undefined,
+        displayName: str(form.get('displayName')),
+        bio: str(form.get('bio')) || null,
+        websiteUrl: str(form.get('websiteUrl')) || null,
+        location: str(form.get('location')) || null,
+      });
+    } catch (error) {
+      // Friendly validation messages, plus a backstop for a concurrent email
+      // collision that slips past the service check and trips the DB UNIQUE index.
+      const message = error instanceof ValidationError
+        ? error.message
+        : isUniqueEmailError(error)
+          ? 'That email is already in use'
+          : null;
+      if (message !== null) {
+        return sendHtml(res, 400, adminUserEditPage(app.admin.getUser(userMatch[1]), message));
+      }
+      throw error;
+    }
     return redirect(res, '/admin/users');
   }
 

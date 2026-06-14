@@ -8,7 +8,8 @@
  */
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { config } from '../config/env';
-import { NotFoundError, type Post, type User } from '../types';
+import { NotFoundError, ValidationError, type Post, type User } from '../types';
+import { isValidEmail, normalizeEmail } from '../email/address';
 import { excerptFromMarkdown } from '../markdown/render';
 import type { UserRepository } from '../db/repositories/UserRepository';
 import type { PostRepository } from '../db/repositories/PostRepository';
@@ -27,6 +28,7 @@ import type {
 } from './SettingsService';
 
 export interface AdminUserEdit {
+  email?: string;
   displayName?: string;
   bio?: string | null;
   websiteUrl?: string | null;
@@ -116,9 +118,26 @@ export class AdminService {
 
   updateUser(id: string, edit: AdminUserEdit): User {
     this.getUser(id); // 404 if missing
+
+    // Email is identity (unique), validated and applied before profile fields so
+    // an invalid/duplicate address blocks the whole save with a friendly message.
+    if (edit.email !== undefined) {
+      const email = normalizeEmail(edit.email);
+      if (!isValidEmail(email)) {
+        throw new ValidationError('A valid email address is required', 'email');
+      }
+      if (this.users.emailExists(email, id)) {
+        throw new ValidationError('That email is already in use', 'email');
+      }
+      if (!this.users.updateEmail(id, email)) throw new NotFoundError('User not found');
+    }
+
+    // Apply the remaining profile fields (only keys actually present are written).
+    const profile: AdminUserEdit = { ...edit };
+    delete profile.email;
     const updated = this.users.updateProfile(
       id,
-      edit as Parameters<UserRepository['updateProfile']>[1]
+      profile as Parameters<UserRepository['updateProfile']>[1]
     );
     if (!updated) throw new NotFoundError('User not found');
     return updated;

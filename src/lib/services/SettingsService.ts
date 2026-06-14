@@ -4,6 +4,7 @@
  * the `app_settings` key/value table via {@link SettingsRepository}.
  */
 import { ValidationError } from '../types';
+import { EMAIL_RE } from '../email/address';
 import type { SettingsRepository } from '../db/repositories/SettingsRepository';
 
 export interface SmtpSettings {
@@ -46,8 +47,6 @@ const KEY = {
   siteDescription: 'site.description',
   emailTemplate: 'email.template',
 } as const;
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Substitute the supported template tags ({PIN}, {sitename}) in `template`. */
 export function applyTags(template: string, vars: { pin: string; sitename: string }): string {

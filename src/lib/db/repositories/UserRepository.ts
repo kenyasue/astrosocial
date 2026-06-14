@@ -169,6 +169,29 @@ export class UserRepository {
   }
 
   /**
+   * True if `email` is already used by a user. Pass `exceptUserId` to ignore a
+   * given user's own row (so re-saving an unchanged email is not a collision).
+   */
+  emailExists(email: string, exceptUserId?: string): boolean {
+    const row = exceptUserId
+      ? this.db.prepare('SELECT 1 FROM users WHERE email = ? AND id != ?').get(email, exceptUserId)
+      : this.db.prepare('SELECT 1 FROM users WHERE email = ?').get(email);
+    return row !== undefined;
+  }
+
+  /**
+   * Update a user's email address (identity, kept separate from profile fields).
+   * Returns the updated user, or null if the user does not exist. Callers must
+   * validate format and uniqueness first; the DB UNIQUE constraint is the backstop.
+   */
+  updateEmail(id: string, email: string): User | null {
+    this.db
+      .prepare('UPDATE users SET email = @email, updated_at = @now WHERE id = @id')
+      .run({ id, email, now: new Date().toISOString() });
+    return this.findById(id);
+  }
+
+  /**
    * Update editable profile fields. Only keys present in `fields` are changed.
    * Returns the updated user, or null if the user does not exist.
    */

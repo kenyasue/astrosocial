@@ -7,6 +7,7 @@ import {
   postDetailPage,
   homePage,
   buildFeedPage,
+  setShellContext,
 } from './pages';
 import {
   REACTION_EMOJIS,
@@ -62,6 +63,40 @@ describe('pages render with escaped user content', () => {
   it('profilePage_ownerShowsControls_visitorDoesNot', () => {
     expect(profilePage(profile, true)).toContain('data-testid="logout"');
     expect(profilePage(profile, false)).not.toContain('data-testid="logout"');
+  });
+
+  it('navRail_showsLoginWhenLoggedOut_logoutWhenLoggedIn', () => {
+    const render = () =>
+      homePage({ tab: 'foryou', loggedIn: false, feed: [], nextCursor: null, timeline: [] });
+
+    setShellContext({ loggedIn: false, unreadNotifications: 0, unreadMessages: 0, siteName: 'AstroSocial' });
+    const out = render();
+    expect(out).toContain('data-testid="rail-login"');
+    expect(out).toContain('href="/login"');
+    expect(out).not.toContain('data-testid="rail-logout"');
+
+    setShellContext({ loggedIn: true, unreadNotifications: 0, unreadMessages: 0, siteName: 'AstroSocial' });
+    const inn = render();
+    expect(inn).toContain('data-testid="rail-logout"');
+    expect(inn).not.toContain('data-testid="rail-login"');
+
+    setShellContext(null); // reset shared module state for other tests
+  });
+
+  it('shell_rendersConfiguredSiteNameInBrandAndTitle', () => {
+    setShellContext({
+      loggedIn: false,
+      unreadNotifications: 0,
+      unreadMessages: 0,
+      siteName: 'Nebula <Net>',
+    });
+    const html = homePage({ tab: 'foryou', loggedIn: false, feed: [], nextCursor: null, timeline: [] });
+    // Brand label, window title, and og:site_name all use the (escaped) DB value.
+    expect(html).toContain('Nebula &lt;Net&gt;');
+    expect(html).toContain('<title>Home · Nebula &lt;Net&gt;</title>');
+    expect(html).toContain('<meta property="og:site_name" content="Nebula &lt;Net&gt;" />');
+    expect(html).not.toContain('· AstroSocial</title>');
+    setShellContext(null); // reset shared module state for other tests
   });
 
   it('loginPage_testMode_showsHint', () => {
