@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      OPENMEOW_DB_PATH: /app/data/openmeow.db
+      OPENMEOW_MIGRATIONS_DIR: /app/migrations
+      # Set OPENMEOW_TEST_MODE=1 only for testing (login PIN becomes 000000).
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
