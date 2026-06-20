@@ -273,6 +273,55 @@ describe('postDetailPage', () => {
     expect(html).toContain('data-testid="lightbox-next"');
   });
 
+  it('renders the immersive overlay chrome with an author/title caption', () => {
+    const html = postDetailPage(baseView, false, social, [], false, null, author);
+    expect(html).toContain('data-testid="lightbox-chrome"');
+    expect(html).toContain('data-testid="lightbox-meta"');
+    expect(html).toContain('data-testid="lightbox-author"');
+    expect(html).toContain('data-testid="lightbox-caption"');
+    // Caption reflects the post's author + (escaped) title, and links to the profile.
+    expect(html).toContain('>Ken</strong>');
+    expect(html).toContain('&lt;b&gt;Title&lt;/b&gt;</span>');
+    expect(html).toContain('href="/@ken"');
+  });
+
+  it('escapes hostile author name/username in the lightbox caption', () => {
+    const evil: PostView = {
+      ...baseView,
+      authorDisplayName: '<script>alert(1)</script>',
+      authorUsername: '"><img src=x onerror=alert(1)>',
+    };
+    const html = postDetailPage(evil, false, social, [], false, null, author);
+    // The dangerous tags / attribute-breaking quotes are neutralised...
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).not.toContain('<img src=x onerror=alert(1)>');
+    // ...because the angle brackets and quote are entity-encoded.
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).toContain('&quot;&gt;&lt;img src=x onerror=alert(1)&gt;');
+  });
+
+  it('falls back to an avatar placeholder when the author has no avatar', () => {
+    const html = postDetailPage(baseView, false, social, [], false, null, null);
+    expect(html).toContain('data-testid="lightbox-avatar"');
+    expect(html).toContain('avatar-placeholder');
+  });
+
+  it('wires overlay auto-fade on pointer idleness', () => {
+    const html = postDetailPage(baseView, false, social, [], false);
+    expect(html).toContain("classList.remove('is-idle')"); // showChrome
+    expect(html).toContain("classList.add('is-idle')"); // idle timeout
+    expect(html).toContain('IDLE_MS = 2000'); // 2s idle window
+  });
+
+  it('wires mobile touch gestures (pan, pinch, tap-to-zoom)', () => {
+    const html = postDetailPage(baseView, false, social, [], false);
+    expect(html).toContain("addEventListener('touchstart'"); // gesture start
+    expect(html).toContain("addEventListener('touchmove'"); // pan/pinch
+    expect(html).toContain("touchMode = 'pinch'"); // two-finger pinch
+    expect(html).toContain("touchMode = 'pan'"); // one-finger pan
+    expect(html).toContain('pinchStartDist'); // pinch distance tracking
+  });
+
   it('renders comment avatars and usernames', () => {
     const comment: CommentView = {
       id: 'c1',

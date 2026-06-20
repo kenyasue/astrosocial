@@ -922,7 +922,12 @@ export function postDetailPage(
 
   ${authorCard}
   ${latestStrip}
-  ${lightboxMarkup()}
+  ${lightboxMarkup({
+    title: view.title ?? 'Untitled',
+    authorName: view.authorDisplayName,
+    authorUsername: view.authorUsername,
+    avatar: avatarImg(author?.avatarUrl ?? null, view.authorDisplayName, 'lightbox-avatar'),
+  })}
 
   <script>
     const sbPid = ${JSON.stringify(view.publicId)};
@@ -996,26 +1001,56 @@ export function postDetailPage(
   );
 }
 
-/** Lightbox overlay markup — a single instance reused per page. */
-function lightboxMarkup(): string {
+/**
+ * Caption metadata shown as an overlay inside the lightbox: the post's author
+ * and title give the full-screen image context.
+ */
+interface LightboxMeta {
+  title: string;
+  authorName: string;
+  authorUsername: string;
+  /** Pre-rendered avatar HTML (reuses {@link avatarImg} placeholder logic). */
+  avatar: string;
+}
+
+/**
+ * Lightbox overlay markup — a single instance reused per page. The image is a
+ * full-screen layer; all controls plus an author/title caption live in a single
+ * `.lightbox-chrome` layer that fades together when the pointer goes idle.
+ */
+function lightboxMarkup(meta: LightboxMeta): string {
   return `
   <div class="lightbox" id="lightbox" data-testid="lightbox" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-label="Image viewer">
-    <button class="lightbox-close" type="button" data-testid="lightbox-close" aria-label="Close">×</button>
-    <button class="lightbox-nav lightbox-prev" type="button" data-testid="lightbox-prev" aria-label="Previous image">‹</button>
     <img class="lightbox-img" id="lightbox-img" data-testid="lightbox-img" alt="" />
-    <button class="lightbox-nav lightbox-next" type="button" data-testid="lightbox-next" aria-label="Next image">›</button>
-    <div class="lightbox-share" data-testid="lightbox-share">
-      <input class="lightbox-url" id="lightbox-url" type="text" readonly data-testid="lightbox-url"
-        aria-label="Image link" />
-      <button class="ghost" type="button" data-testid="lightbox-copy">Copy link</button>
+    <div class="lightbox-chrome" data-testid="lightbox-chrome">
+      <div class="lightbox-scrim" aria-hidden="true"></div>
+      <div class="lightbox-topbar">
+        <a class="lightbox-meta" data-testid="lightbox-meta" href="/@${escapeHtml(meta.authorUsername)}">
+          ${meta.avatar}
+          <span class="lightbox-meta-text">
+            <strong class="lightbox-author" data-testid="lightbox-author">${escapeHtml(meta.authorName)}</strong>
+            <span class="lightbox-caption" data-testid="lightbox-caption">${escapeHtml(meta.title)}</span>
+          </span>
+        </a>
+        <div class="lightbox-actions">
+          <div class="lightbox-share" data-testid="lightbox-share">
+            <input class="lightbox-url" id="lightbox-url" type="text" readonly data-testid="lightbox-url"
+              aria-label="Image link" />
+            <button class="ghost" type="button" data-testid="lightbox-copy">Copy link</button>
+          </div>
+          <button class="lightbox-close" type="button" data-testid="lightbox-close" aria-label="Close">×</button>
+        </div>
+      </div>
+      <button class="lightbox-nav lightbox-prev" type="button" data-testid="lightbox-prev" aria-label="Previous image">‹</button>
+      <button class="lightbox-nav lightbox-next" type="button" data-testid="lightbox-next" aria-label="Next image">›</button>
+      <div class="lightbox-zoom">
+        <button class="ghost" type="button" data-testid="lightbox-zoom-out" aria-label="Zoom out">−</button>
+        <button class="ghost" type="button" data-testid="lightbox-zoom-in" aria-label="Zoom in">+</button>
+      </div>
+      <p class="lightbox-hint" data-testid="lightbox-hint">
+        Click to zoom · Shift+Click to zoom out · Space+Drag to pan · Esc to close
+      </p>
     </div>
-    <div class="lightbox-zoom">
-      <button class="ghost" type="button" data-testid="lightbox-zoom-out" aria-label="Zoom out">−</button>
-      <button class="ghost" type="button" data-testid="lightbox-zoom-in" aria-label="Zoom in">+</button>
-    </div>
-    <p class="lightbox-hint" data-testid="lightbox-hint">
-      Click to zoom · Shift+Click to zoom out · Space+Drag to pan · Esc to close
-    </p>
   </div>`;
 }
 
@@ -1042,6 +1077,24 @@ function lightboxScript(selector: string): string {
     let idx = 0, scale = 1, tx = 0, ty = 0, lastFocus = null;
     let spaceDown = false, shiftDown = false, panning = false;
     let panStartX = 0, panStartY = 0, panOrigX = 0, panOrigY = 0, justPanned = false;
+    // Touch gesture state (mobile): one-finger pan, two-finger pinch, tap-to-zoom.
+    let touchMode = null; // null | 'pan' | 'pinch'
+    let pinchStartDist = 0, pinchStartScale = 1, pinchMidX = 0, pinchMidY = 0;
+    let touchStartX = 0, touchStartY = 0, touchPanOrigX = 0, touchPanOrigY = 0, touchMoved = false;
+    // Auto-fade: hide the overlay (and cursor) after the pointer is idle.
+    let idleTimer = null;
+    const IDLE_MS = 2000;
+    function showChrome() {
+      box.classList.remove('is-idle');
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        if (!panning && !touchMode) box.classList.add('is-idle');
+      }, IDLE_MS);
+    }
+    function stopIdle() {
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+      box.classList.remove('is-idle');
+    }
     // Whether the current '#image-…' history entry was pushed by a click-open
     // (so closing should pop it and return to the post) vs a deep-link load.
     let weOwnHistory = false;
@@ -1119,12 +1172,14 @@ function lightboxScript(selector: string): string {
       box.hidden = false; box.setAttribute('aria-hidden', 'false');
       document.body.style.overflow = 'hidden';
       closeBtn.focus();
+      showChrome();
     }
     function closeUI() {
       box.hidden = true; box.setAttribute('aria-hidden', 'true');
       document.body.style.overflow = '';
+      stopIdle();
       // Reset transient tool state so the next open starts on the magnifier.
-      spaceDown = false; shiftDown = false; panning = false;
+      spaceDown = false; shiftDown = false; panning = false; touchMode = null;
       imgEl.style.transition = '';
       if (lastFocus && lastFocus.focus) lastFocus.focus();
     }
@@ -1210,7 +1265,77 @@ function lightboxScript(selector: string): string {
       setTimeout(() => { justPanned = false; }, 0);
     });
 
-    box.querySelector('[data-testid="lightbox-close"]').addEventListener('click', close);
+    // Pointer activity keeps the overlay visible; idleness fades it (see showChrome).
+    box.addEventListener('mousemove', () => { if (!box.hidden) showChrome(); });
+
+    // --- Touch gestures (mobile): one-finger pan, two-finger pinch, tap-to-zoom ---
+    function touchDist(a, b) {
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    }
+    imgEl.addEventListener('touchstart', (e) => {
+      showChrome();
+      if (e.touches.length >= 2) {
+        touchMode = 'pinch';
+        pinchStartDist = touchDist(e.touches[0], e.touches[1]);
+        pinchStartScale = scale;
+        pinchMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        pinchMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        imgEl.style.transition = 'none';
+        e.preventDefault();
+      } else if (e.touches.length === 1) {
+        touchMode = 'pan';
+        const t = e.touches[0];
+        touchStartX = t.clientX; touchStartY = t.clientY;
+        touchPanOrigX = tx; touchPanOrigY = ty; touchMoved = false;
+        imgEl.style.transition = 'none';
+      }
+    }, { passive: false });
+    imgEl.addEventListener('touchmove', (e) => {
+      if (touchMode === 'pinch' && e.touches.length >= 2) {
+        e.preventDefault();
+        const d = touchDist(e.touches[0], e.touches[1]);
+        if (pinchStartDist > 0) {
+          const target = Math.max(MIN, Math.min(MAX, pinchStartScale * (d / pinchStartDist)));
+          // Zoom about the gesture midpoint (same math as zoomAt, applied incrementally).
+          const ratio = target / scale;
+          const rect = imgEl.getBoundingClientRect();
+          tx += (pinchMidX - (rect.left + rect.width / 2)) * (1 - ratio);
+          ty += (pinchMidY - (rect.top + rect.height / 2)) * (1 - ratio);
+          scale = target;
+          applyTransform();
+        }
+      } else if (touchMode === 'pan' && e.touches.length === 1) {
+        const t = e.touches[0];
+        const dx = t.clientX - touchStartX, dy = t.clientY - touchStartY;
+        if (Math.abs(dx) + Math.abs(dy) > 6) touchMoved = true;
+        if (scale > 1) {
+          e.preventDefault(); // pan the zoomed image instead of scrolling the page
+          tx = touchPanOrigX + dx; ty = touchPanOrigY + dy;
+          applyTransform();
+        }
+      }
+      showChrome();
+    }, { passive: false });
+    imgEl.addEventListener('touchend', (e) => {
+      imgEl.style.transition = '';
+      // A tap (single finger, no real movement) toggles zoom at the tap point.
+      if (touchMode === 'pan' && !touchMoved) {
+        e.preventDefault(); // suppress the synthetic click so it doesn't double-zoom
+        if (scale > 1) { scale = 1; tx = 0; ty = 0; applyTransform(); }
+        else { zoomAt(2.5, touchStartX, touchStartY); }
+      }
+      if (Math.abs(scale - 1) < 1e-9) { scale = 1; tx = 0; ty = 0; applyTransform(); }
+      if (e.touches.length === 0) touchMode = null;
+      showChrome();
+    }, { passive: false });
+    // OS interrupts (scroll hand-off, incoming call) fire touchcancel, not
+    // touchend — reset gesture state so the next tap starts clean.
+    imgEl.addEventListener('touchcancel', () => {
+      imgEl.style.transition = ''; touchMode = null; touchMoved = false;
+      showChrome();
+    }, { passive: false });
+
+    box.querySelector('[data-testid="lightbox-close"]').addEventListener('click', (e) => { e.stopPropagation(); close(); });
     box.querySelector('[data-testid="lightbox-prev"]').addEventListener('click', (e) => { e.stopPropagation(); show(idx - 1); });
     box.querySelector('[data-testid="lightbox-next"]').addEventListener('click', (e) => { e.stopPropagation(); show(idx + 1); });
     box.querySelector('[data-testid="lightbox-zoom-in"]').addEventListener('click', (e) => { e.stopPropagation(); zoomCenter(0.25); });
@@ -1219,7 +1344,20 @@ function lightboxScript(selector: string): string {
 
     document.addEventListener('keydown', (e) => {
       if (box.hidden) return;
+      showChrome();
       if (e.key === 'Escape') { close(); return; }
+      // Trap Tab within the dialog (it is role="dialog" aria-modal="true").
+      if (e.key === 'Tab') {
+        const focusables = Array.from(box.querySelectorAll(
+          'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )).filter((el) => el.offsetParent !== null);
+        if (focusables.length) {
+          const first = focusables[0], last = focusables[focusables.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+        return;
+      }
       if (e.key === 'ArrowLeft') { show(idx - 1); return; }
       if (e.key === 'ArrowRight') { show(idx + 1); return; }
       if (e.code === 'Space' || e.key === ' ') {
