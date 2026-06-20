@@ -98,11 +98,14 @@ test.describe('touch gestures', () => {
     const cx = box.x + box.width / 2;
     const cy = box.y + box.height / 2;
 
-    // Tap to zoom in.
+    // Default is the cover fit (scale 1, fills the screen with no black margins).
+    await expect(img).toHaveAttribute('style', /scale\(1\)/);
+
+    // Tap to zoom in past the cover fit.
     await page.touchscreen.tap(cx, cy);
     await expect(img).toHaveAttribute('style', /scale\((?!1\))/);
 
-    // Tap again to reset back to fit.
+    // Tap again to reset back to the cover fit.
     await page.touchscreen.tap(cx, cy);
     await expect(img).toHaveAttribute('style', /scale\(1\)/);
   });

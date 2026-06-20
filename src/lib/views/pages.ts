@@ -1073,7 +1073,11 @@ function lightboxScript(selector: string): string {
     const closeBtn = box.querySelector('[data-testid="lightbox-close"]');
     const urlField = document.getElementById('lightbox-url');
     const copyBtn = box.querySelector('[data-testid="lightbox-copy"]');
+    // The image element is sized to COVER the viewport (see fitCover), so the
+    // default transform scale of 1 already fills the screen with no black
+    // margins. MIN/MAX bound zoom relative to that cover fit.
     const MIN = 1, MAX = 6;
+    let currentSrcEl = null; // the on-page <img> the lightbox is currently showing
     let idx = 0, scale = 1, tx = 0, ty = 0, lastFocus = null;
     let spaceDown = false, shiftDown = false, panning = false;
     let panStartX = 0, panStartY = 0, panOrigX = 0, panOrigY = 0, justPanned = false;
@@ -1120,12 +1124,31 @@ function lightboxScript(selector: string): string {
       return ids.indexOf(h.slice('#image-'.length));
     }
 
+    // Pan limits are based on how far the scaled image overflows the viewport,
+    // so panning never reveals black bars and works at the cover fit (where one
+    // dimension already overflows).
     function clampPan() {
-      if (scale <= 1) { tx = 0; ty = 0; return; }
-      const maxX = ((scale - 1) * imgEl.clientWidth) / 2;
-      const maxY = ((scale - 1) * imgEl.clientHeight) / 2;
+      const vw = box.clientWidth || window.innerWidth;
+      const vh = box.clientHeight || window.innerHeight;
+      const maxX = Math.max(0, (imgEl.clientWidth * scale - vw) / 2);
+      const maxY = Math.max(0, (imgEl.clientHeight * scale - vh) / 2);
       tx = Math.max(-maxX, Math.min(maxX, tx));
       ty = Math.max(-maxY, Math.min(maxY, ty));
+    }
+    // Size the image element so it COVERS the viewport — fill by width or height
+    // (whichever leaves no gap, from the aspect ratio), letting the overflow be
+    // cropped by the lightbox's overflow:hidden. This makes the default
+    // transform scale of 1 a full-bleed view with no black margins, regardless
+    // of the image's intrinsic size.
+    function fitCover() {
+      const nw = (currentSrcEl && currentSrcEl.naturalWidth) || imgEl.naturalWidth;
+      const nh = (currentSrcEl && currentSrcEl.naturalHeight) || imgEl.naturalHeight;
+      const vw = box.clientWidth || window.innerWidth;
+      const vh = box.clientHeight || window.innerHeight;
+      if (!nw || !nh || !vw || !vh) return;
+      const ar = nw / nh, vr = vw / vh;
+      if (ar > vr) { imgEl.style.height = vh + 'px'; imgEl.style.width = (vh * ar) + 'px'; }
+      else { imgEl.style.width = vw + 'px'; imgEl.style.height = (vw / ar) + 'px'; }
     }
     function applyTransform() {
       clampPan();
@@ -1155,10 +1178,17 @@ function lightboxScript(selector: string): string {
     }
     function show(i) {
       idx = (i + items.length) % items.length;
-      scale = 1; tx = 0; ty = 0; applyTransform();
-      const src = items[idx].getAttribute('data-full') || items[idx].currentSrc || items[idx].src;
+      scale = 1; tx = 0; ty = 0;
+      currentSrcEl = items[idx];
+      const src = currentSrcEl.getAttribute('data-full') || currentSrcEl.currentSrc || currentSrcEl.src;
+      // Size to cover now using the (already-loaded) on-page image's aspect; if
+      // it wasn't measurable yet (e.g. a deep-link before it loaded), re-fit
+      // once the full image loads.
+      imgEl.onload = currentSrcEl.naturalWidth ? null : () => { fitCover(); applyTransform(); };
       imgEl.src = src;
-      imgEl.alt = items[idx].alt || '';
+      imgEl.alt = currentSrcEl.alt || '';
+      fitCover();
+      applyTransform();
       updateCursor();
       // Reflect the current image in the address bar (no new history entry) and
       // in the copyable absolute-URL field.
@@ -1268,6 +1298,16 @@ function lightboxScript(selector: string): string {
     // Pointer activity keeps the overlay visible; idleness fades it (see showChrome).
     box.addEventListener('mousemove', () => { if (!box.hidden) showChrome(); });
 
+    // Keep the cover fit and pan limits correct across viewport changes (e.g.
+    // device rotation). Re-fit the cover size; recenter only when the user has
+    // not zoomed in, so a manual zoom is preserved.
+    window.addEventListener('resize', () => {
+      if (box.hidden) return;
+      fitCover();
+      if (scale <= 1 + 1e-3) { tx = 0; ty = 0; }
+      applyTransform();
+    });
+
     // --- Touch gestures (mobile): one-finger pan, two-finger pinch, tap-to-zoom ---
     function touchDist(a, b) {
       return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
@@ -1308,8 +1348,10 @@ function lightboxScript(selector: string): string {
         const t = e.touches[0];
         const dx = t.clientX - touchStartX, dy = t.clientY - touchStartY;
         if (Math.abs(dx) + Math.abs(dy) > 6) touchMoved = true;
-        if (scale > 1) {
-          e.preventDefault(); // pan the zoomed image instead of scrolling the page
+        // Pan whenever the scaled image overflows the viewport (true by default
+        // at the cover scale, so a finger drag explores the cropped edges).
+        if (imgEl.clientWidth * scale > box.clientWidth + 1 || imgEl.clientHeight * scale > box.clientHeight + 1) {
+          e.preventDefault(); // pan the image instead of scrolling the page
           tx = touchPanOrigX + dx; ty = touchPanOrigY + dy;
           applyTransform();
         }
@@ -1318,7 +1360,8 @@ function lightboxScript(selector: string): string {
     }, { passive: false });
     imgEl.addEventListener('touchend', (e) => {
       imgEl.style.transition = '';
-      // A tap (single finger, no real movement) toggles zoom at the tap point.
+      // A tap (single finger, no real movement) toggles zoom at the tap point:
+      // zoomed-in → back to the cover default; at cover → zoom in.
       if (touchMode === 'pan' && !touchMoved) {
         e.preventDefault(); // suppress the synthetic click so it doesn't double-zoom
         if (scale > 1) { scale = 1; tx = 0; ty = 0; applyTransform(); }

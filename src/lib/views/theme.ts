@@ -527,7 +527,9 @@ select { width: 100%; padding: 12px 14px; background: var(--surface-2); color: v
   --lbx-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
   background: var(--lbx-stage); }
 .lightbox[hidden] { display: none; }
-.lightbox-img { max-width: 100vw; max-height: 100vh; max-height: 100dvh; object-fit: contain;
+/* Sized in JS to cover the viewport (fill by width or height); the overflow is
+   cropped by the .lightbox overflow:hidden, giving a full-bleed default view. */
+.lightbox-img { display: block; flex: none; max-width: none; max-height: none;
   transition: transform 0.15s ease; transform-origin: center; cursor: zoom-in;
   will-change: transform; touch-action: none;
   user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }

@@ -322,6 +322,13 @@ describe('postDetailPage', () => {
     expect(html).toContain('pinchStartDist'); // pinch distance tracking
   });
 
+  it('defaults the lightbox to a cover fit (fills the screen, no black margins)', () => {
+    const html = postDetailPage(baseView, false, social, [], false);
+    expect(html).toContain('function fitCover'); // sizes the image to cover the viewport
+    expect(html).toContain('ar > vr'); // fit by width or height from the aspect ratio
+    expect(html).toContain('currentSrcEl'); // measured from the on-page image
+  });
+
   it('renders comment avatars and usernames', () => {
     const comment: CommentView = {
       id: 'c1',

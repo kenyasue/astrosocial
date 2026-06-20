@@ -62,11 +62,18 @@ test('clicking the cover opens the lightbox with the magnifier active by default
   // Magnifier is the default tool → zoom-in cursor.
   await expect(img).toHaveCSS('cursor', 'zoom-in');
 
-  // Click zooms in (centered → translate stays 0, scale grows).
+  // The image is sized to COVER the viewport (fill by width or height, no black
+  // margins), so the default transform scale of 1 is already a full-bleed view.
+  await expect(img).toHaveAttribute('style', /scale\(1\)/);
+  const cover = (await img.boundingBox())!;
+  const vp = page.viewportSize()!;
+  expect(Math.max(cover.width / vp.width, cover.height / vp.height)).toBeGreaterThanOrEqual(0.99);
+
+  // Click zooms in past the cover fit (scale grows).
   await img.click();
   await expect(img).toHaveAttribute('style', /scale\((?:1\.6|1\.[6-9]|[2-9])/);
 
-  // Shift+click zooms back out toward 1×.
+  // Shift+click zooms back out to the cover fit (scale 1, no black bars).
   await img.click({ modifiers: ['Shift'] });
   await expect(img).toHaveAttribute('style', /scale\(1\)/);
 
